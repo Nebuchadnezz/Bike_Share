@@ -1,0 +1,129 @@
+---
+title: "Case Study 1"
+author: "Corey Neff"
+date: "7/2/2021"
+output: github_document
+---
+
+# Case Study 1: How Does a Bike-Share Navigate Speedy Success?
+
+## Introduction
+
+**Scenario**
+
+You are a junior data analyst working in the marketing analyst team at Cyclistic, a bike-share company in Chicago. The director of marketing believes the company’s future success depends on maximizing the number of annual memberships. Therefore, your team wants to understand how casual riders and annual members use Cyclistic bikes differently. From these insights, your team will design a new marketing strategy to convert casual riders into annual members. But first, Cyclistic executives must approve your recommendations, so they must be backed up with compelling data insights and professional data visualizations.
+
+### The Task at Hand
+
+How do annual members at casual users of Cyclistic differ in their usage of the company's bikes?
+
+### Description of the Data
+
+There are 12 monthly datasets, together equal to an entire year, detailing bike usage. Each dataset contains the following variables:
+
+1. De-identified Rider ID
+2. Type of bike used
+3. When the bike was rented
+4. When the bike was returned
+5. What station the bike was rented from
+6. The station ID that the bike was rented from
+7. What station the bike was returned to
+8. The station ID that the bike was returned to
+9. The starting latitude
+10. The starting longitude
+11. The ending latitude
+12. The ending longitude
+13. Member status
+
+There don't seem to be any credibility issues with the data, as it was taken automatically from bike usage. There are some issues with some variables though. 
+
+```{r Loading, warning=FALSE}
+librarian::shelf(dplyr, purrr, data.table, lubridate, ggplot2, geosphere, rlist)
+mydata <- do.call(rbind, lapply(list.files(pattern="*.csv"), fread))
+head(mydata)
+```
+
+### Cleaning the Data
+
+The data was quite clean, initially, and did not need much change. Most notably, it was sometimes the case that the starting time was *after* the ending time, which is impossible. This was handled by assigning these values as NA. had I know what mechanism caused this oversight, I could have corrected the data, but without knowing it is best to remove the values entirely.
+
+Additionally, a number of variables were created.
+
+1. *Distance* = The distance between the starting and ending coordinates.
+2. *Ride_length* = The difference between the starting and ending times.
+3. *Day* = The weekday that the bike was rented on.
+
+```{r Cleaning, warning=F}
+mydata <- mydata %>% 
+      select(-c(ride_id, start_station_name, end_station_name)) %>%
+      mutate(distance = distHaversine(as.matrix(cbind(mydata$start_lng, mydata$start_lat)), as.matrix(cbind(mydata$end_lng, mydata$end_lat))),
+             ride_length = as.numeric(ended_at-started_at),
+             ended_at = ymd_hms(ended_at),
+             started_at = ymd_hms(started_at),
+             day = factor(weekdays(started_at), c("Monday", "Tuesday", "Wednesday", "Thursday","Friday", "Saturday", "Sunday")),
+             member_casual = as.factor(member_casual))
+
+mydata$ride_length <- replace(mydata$ride_length, which(mydata$ride_length < 0), NA)
+```
+
+### Analysis 
+
+The analysis was very simple. Since the goal was to determine difference in usage among members and casual users, descriptive statistics grouped by this variable should be sufficient.
+
+It seems that casual users tend to ride for much longer, but less often. For both groups, the most often day to ride a bike was on a Saturday, and the most common month was in August. Finally, it seems members tend to ride a slightly longer distance compared to causal users.
+
+```{r ANalysis, warning=F}
+mydata %>% group_by(member_casual) %>%
+      summarise(Mean_length = mean(ride_length, na.rm = T),
+                Mode_weekday = DescTools::Mode(day),
+                Mode_month = DescTools::Mode(month(started_at, label = T)),
+                Mean_distance = mean(distance, na.rm = T))
+```
+
+### Visualizations
+
+```{r, echo = F, message=FALSE, warning=F}
+ggplot(data = mydata) +
+      geom_histogram(aes(x=ride_length, fill = member_casual))+
+      xlim(0,5000) +
+      labs(fill = "Casual User or Member?") +
+      xlab("Ride Length (s)") +
+      ggtitle(("Histogram of Ride Length by Member Status")) +
+      theme_bw()
+```
+
+From this histogram, we can see that most users are not members. Additionally, we can see that casual users tend to ride for a  slightly longer amount of time.
+
+```{r, echo = F, message=FALSE, warning=F}
+ggplot(data = mydata) +
+      geom_histogram(aes(x=distance, fill = member_casual)) + 
+      xlim(0,20000) +
+      labs(fill = "Casual User or Member?") +
+      xlab("Ride Distane (m)") +
+      ggtitle("Histogram of Ride Distance by Member Status") +
+      theme_bw()
+```
+
+This histogram tells a similar story. We can see that most users are, again, not members. Since there are more casual users, it appears they may be riding further on average, but this may not be the case. I suspect that if the population sizes of these two groups were equal then the histograms would be nearly identical. Therefore, member status does not seem to directly influence how far someone is willing to ride on the bike.
+
+```{r, echo = F, message=FALSE, warning=F}
+ggplot(mydata) +
+      geom_bar(aes(x=day, fill = member_casual), position = 'dodge')+
+      labs(fill = "Casual User or Member?") +            
+      xlab("Day of the Week") +
+      ggtitle(("Frequencies of Weekday Usage by Member Status")) +
+      theme_bw()
+```
+
+This visual tells an interesting story. Member bike usage is much less dependent on the day of the week than for casual users. Casual bike users have greatly increased demand at the end of the week compared to members.
+
+### Recommendations 
+
+Generally speaking, casual users ride for a longer duration but also less often. To encourage them to enroll, here are some simple recommendations: 
+
+1. Incentivize casual users to enroll as a member by providing discounts based on length of time used.
+2. Have weekend specials reducing the cost for members only, encouraging casual users to enroll.
+3. Introduce a "reservation" system allowing members to schedule a bike ahead of time during busy periods (e.g. Saturdays or August),
+effectively being able to skip the line during high-demand times.
+4. Provide discounts for returning usage, like a stamp card.
+
